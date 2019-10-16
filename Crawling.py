@@ -1,23 +1,24 @@
 # -*- coding: utf-8 -*-
 
 from math import sin, cos, sqrt, atan2, radians
-import requests, csv, json, os
+import requests, csv, os
 
 na = "<NA>"
 objFilePath = 'object_file.csv'
+railwayPath = 'Haltestellen-liste.json'
+failedCrawlsInRow = 0
+trainStops = None
 objIds = None
+headers = ["immoId", "objType", "cityName", "zipCode", "regionId", "canton", "street", "rooms",
+           "floor", "surface", "yearBuilt", "yearRenovated", "lon", "lat",
+           "distanceToStation", "netPrice", "extraPrice", "price"]
 
-def testEqualityOfJsonResponse(url1, url2):
-    #result1 = jsonRequest("https://rest-api.immoscout24.ch/v4/en/properties/5702801?ci=1&ct=64&l=4020&pn=1&pty=1%2C4&s=1&t=1")
-    #result2 = jsonRequest("https://rest-api.immoscout24.ch/v4/en/properties/5702801")
-    result1 = jsonRequest(url1)
-    result2 = jsonRequest(url2)
+def getTrainStations():
+    global trainStops
+    trainStops = jsonRequest("https://data.sbb.ch/explore/dataset/didok-liste/download/"
+                           "?format=json&refine.verkehrsmittel=Zug&refine.betriebspunkttyp=Haltestelle&"
+                           "timezone=Europe/Berlin")
 
-    if result1 == result2:
-        print(result1)
-        print("both same")
-    else:
-        print("different")
 
 def distance(lat1, lon1, lat2, lon2):
     """Calculates the distance of two WGS84 coordinates in km"""
@@ -39,14 +40,15 @@ def distance(lat1, lon1, lat2, lon2):
 
 def getDistanceToNearestTrainStation(lon, lat):
     shortestDistance = 100000
-    with open('Haltestellen-liste.json') as json_file:
-        trainStops = json.load(json_file)
-        for station in trainStops:
-            stationLat = station["fields"]["geopos"][0]
-            stationLon = station["fields"]["geopos"][1]
-            d = distance(lat, lon, stationLat, stationLon)
-            if d < shortestDistance:
-                shortestDistance = d
+    global trainStops
+    if not(trainStops):
+        getTrainStations()
+    for station in trainStops:
+        stationLat = station["fields"]["geopos"][0]
+        stationLon = station["fields"]["geopos"][1]
+        d = distance(lat, lon, stationLat, stationLon)
+        if d < shortestDistance:
+            shortestDistance = d
     return shortestDistance
             
 
@@ -62,7 +64,7 @@ def jsonRequest(url):
 
 
 #python package erstellen Struktur etc. um auf VM laufen lassen zu können
-def launchListCrawling(json):
+def launchListCrawling(json, objType):
     global objIds
     objIds = getObjIds()
     matches = json["pagingInfo"]["totalMatches"]
@@ -72,14 +74,14 @@ def launchListCrawling(json):
         header = path+resource
         
         #avoid double requests of the same building
-        identificator = resource.split("?")[0]
-        if identificator in objIds:
+        immoId = resource.split("?")[0]
+        if immoId in objIds:
             continue
         
         #perform actual request
         obj = jsonRequest(header)
         if obj:
-            objIds[identificator] = True
+            objIds[immoId] = True
             propertyDetails = getValue(obj, "propertyDetails")
             if getValue(propertyDetails, "priceUnitLabel") != "month": #ensures that the price is always monthly
                 continue
@@ -105,7 +107,9 @@ def launchListCrawling(json):
             with open(objFilePath , mode='a', newline='') as object_file:
                 print("writing index: ", i)
                 object_writer = csv.writer(object_file)
-                object_writer.writerow([identificator, cityName, zipCode, regionId, canton, street, rooms,
+                if os.stat(objFilePath).st_size == 0: #wirte headers if file is empty
+                    object_writer.writerow(headers)
+                object_writer.writerow([immoId, objType, cityName, zipCode, regionId, canton, street, rooms,
                                         floor, surface, yearBuilt, yearRenovated, lon, lat,  
                                         distanceToStation, netPrice, extraPrice, price])
                     
@@ -137,43 +141,33 @@ def getValue(json, key):
     return value
             
     
-
-def storeZip(json, index):
-    with open('zip_file.csv', mode='a', newline='') as zip_file:
-        zip_writer = csv.writer(zip_file)
-        zip_writer.writerow([index, json["properties"][0]["cityName"], json["properties"][0]["zip"]])
-    
-  
-
-def launchCrawling(zips = False):
-    failedCrawlsInRow = 0
-    d = {}
-    #range until ~5700
-    for i in range(2, 3):
-        listUrl = "https://rest-api.immoscout24.ch/v4/en/properties?l={}&s=1&t=1".format(i)
-        result = jsonRequest(listUrl)
-        if result:
-            try:
-                #request not failed if JSON correct but no objects found
-                if result["pagingInfo"]["totalMatches"] > 0:
-                    failedCrawlsInRow = 0
-                    #creates a file with just the id's of zips if it is set
-                    if zips:
-                        if result["properties"][0]["zip"] in d:
-                            continue
-                        d[str(result["properties"][0]["zip"])] = True
-                        print("i: ", i, "\ncityZip: ", result["properties"][0]["zip"], "\ncityName: ", result["properties"][0]["cityName"])
-                        storeZip(result, i)
-                    else:
-                        launchListCrawling(result)
-                else:
-                    failedCrawlsInRow += 1
-            except:
+        
+def listRequest(json, objType):
+    global failedCrawlsInRow
+    if json:
+        try:
+            #request not failed if JSON correct but no objects found
+            if json["pagingInfo"]["totalMatches"] > 0:
+                failedCrawlsInRow = 0
+                launchListCrawling(json, objType)
+            else:
                 failedCrawlsInRow += 1
-        else:
+        except:
             failedCrawlsInRow += 1
-            if failedCrawlsInRow > 20:
-                break
+    else:
+        failedCrawlsInRow += 1
+            
+
+def launchCrawling():
+    #range until ~5700 (10.2019)
+    for i in range(2, 3):
+        if failedCrawlsInRow > 50:
+            break
+        houseUrl = "https://rest-api.immoscout24.ch/v4/en/properties?l={}&s=3&t=1".format(i) #s=3 house
+        flatUrl = "https://rest-api.immoscout24.ch/v4/en/properties?l={}&s=2&t=1".format(i) #s=2 flat
+        listRequest(jsonRequest(houseUrl), "house")
+        listRequest(jsonRequest(flatUrl), "flat")
+        
         
         
 launchCrawling()
