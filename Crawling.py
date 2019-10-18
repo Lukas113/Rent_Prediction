@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
+#!/usr/bin/python3
 
 from math import sin, cos, sqrt, atan2, radians
-import requests, csv, os
+import requests, csv, os, logging
 
+logging.basicConfig(filename='location.log', format='%(asctime)s %(levelname)-8s %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 na = "<NA>"
+objects = 0
 objFilePath = 'object_file.csv'
-railwayPath = 'Haltestellen-liste.json'
 failedCrawlsInRow = 0
 trainStops = None
 objIds = None
@@ -64,13 +67,13 @@ def jsonRequest(url):
 
 
 #python package erstellen Struktur etc. um auf VM laufen lassen zu können
-def launchListCrawling(json, objType):
-    global objIds
+def launchListCrawling(jsonObj, objType):
+    global objIds, objects
     objIds = getObjIds()
-    matches = json["pagingInfo"]["totalMatches"]
+    matches = jsonObj["pagingInfo"]["totalMatches"]
     path = "https://rest-api.immoscout24.ch/v4/en/properties/"
     for i in range(matches):  
-        resource = json["allProperties"][i]["detailUrl"]["en"].split("/")[-1]
+        resource = jsonObj["allProperties"][i]["detailUrl"]["en"].split("/")[-1]
         header = path+resource
         
         #avoid double requests of the same building
@@ -105,10 +108,10 @@ def launchListCrawling(json, objType):
             extraPrice = getValue(propertyDetails, "extraPrice")
             price = getValue(propertyDetails, "price")
             with open(objFilePath , mode='a', newline='') as object_file:
-                print("writing index: ", i)
                 object_writer = csv.writer(object_file)
                 if os.stat(objFilePath).st_size == 0: #wirte headers if file is empty
                     object_writer.writerow(headers)
+                objects += 1
                 object_writer.writerow([immoId, objType, cityName, zipCode, regionId, canton, street, rooms,
                                         floor, surface, yearBuilt, yearRenovated, lon, lat,  
                                         distanceToStation, netPrice, extraPrice, price])
@@ -133,23 +136,26 @@ def getObjIds():
 
 
             
-def getValue(json, key):
+def getValue(jsonObj, key):
+    if jsonObj == na:
+        return na
     try:
-        value = json[key]
+        return jsonObj[key]
+    except KeyError:
+        return na
     except:
-        value = na
-    return value
+        return "ERROR"
             
     
         
-def listRequest(json, objType):
+def listRequest(jsonObj, objType):
     global failedCrawlsInRow
-    if json:
+    if jsonObj:
         try:
             #request not failed if JSON correct but no objects found
-            if json["pagingInfo"]["totalMatches"] > 0:
+            if jsonObj["pagingInfo"]["totalMatches"] > 0:
                 failedCrawlsInRow = 0
-                launchListCrawling(json, objType)
+                launchListCrawling(jsonObj, objType)
             else:
                 failedCrawlsInRow += 1
         except:
@@ -160,14 +166,20 @@ def listRequest(json, objType):
 
 def launchCrawling():
     #range until ~5700 (10.2019)
-    for i in range(2, 3):
-        if failedCrawlsInRow > 50:
+    for i in range(2, 5700):
+        global objects
+        objects = 0
+        if failedCrawlsInRow > 100:
             break
         houseUrl = "https://rest-api.immoscout24.ch/v4/en/properties?l={}&s=3&t=1".format(i) #s=3 house
         flatUrl = "https://rest-api.immoscout24.ch/v4/en/properties?l={}&s=2&t=1".format(i) #s=2 flat
         listRequest(jsonRequest(houseUrl), "house")
         listRequest(jsonRequest(flatUrl), "flat")
+        finished = "objects: {},    finished l={}".format(objects, i)
+        logging.info(finished)
+        print(finished)
         
         
-        
-launchCrawling()
+if __name__ == '__main__':        
+    launchCrawling()
+
