@@ -8,7 +8,7 @@ logging.basicConfig(filename='location.log', format='%(asctime)s %(levelname)-8s
                     datefmt='%Y-%m-%d %H:%M:%S', level=logging.INFO)
 na = "<NA>"
 objects = 0
-objFilePath = 'object_file.csv'
+objFilePath = 'object_file_v2.csv'
 failedCrawlsInRow = 0
 trainStops = None
 objIds = None
@@ -89,24 +89,25 @@ def launchListCrawling(jsonObj, objType):
             if getValue(propertyDetails, "priceUnitLabel") != "month": #ensures that the price is always monthly
                 continue
             #start of value extraciton
-            cityName = getValue(propertyDetails, "cityName")
-            zipCode = getValue(propertyDetails, "zip")
-            regionId = getValue(propertyDetails, "regionId")
-            canton = getValue(propertyDetails, "stateShort")
-            street = getValue(propertyDetails, "street")
-            rooms = getValue(propertyDetails, "numberOfRooms")
-            floor = getValue(getValue(propertyDetails, "attributesSize"), "floor")
-            surface = getValue(propertyDetails, "surfaceLiving")
-            yearBuilt = getValue(getValue(propertyDetails, "attributes"), "yearBuilt")
-            yearRenovated = getValue(getValue(propertyDetails, "attributes"), "yearRenovated")
-            lon = getValue(propertyDetails, "longitude")
-            lat = getValue(propertyDetails, "latitude")
+            print(propertyDetails)
+            cityName = clearString(getValue(propertyDetails, "cityName"))
+            zipCode = clearString(getValue(propertyDetails, "zip"))
+            regionId = clearString(getValue(propertyDetails, "regionId"))
+            canton = clearString(getValue(propertyDetails, "stateShort"))
+            street = clearString(getValue(propertyDetails, "street"))
+            rooms = clearString(getValue(propertyDetails, "numberOfRooms"), True)
+            floor = clearString(getValue(getValue(propertyDetails, "attributesSize"), "floor"), True)
+            surface = clearString(getValue(propertyDetails, "surfaceLiving"), True)
+            yearBuilt = clearString(getValue(getValue(propertyDetails, "attributes"), "yearBuilt"))
+            yearRenovated = clearString(getValue(getValue(propertyDetails, "attributes"), "yearRenovated"))
+            lon = clearString(getValue(propertyDetails, "longitude"))
+            lat = clearString(getValue(propertyDetails, "latitude"))
             distanceToStation = na
             if not(lat == na or lon == na):
                 distanceToStation = getDistanceToNearestTrainStation(lon, lat)
-            netPrice = getValue(propertyDetails, "netPrice")
-            extraPrice = getValue(propertyDetails, "extraPrice")
-            price = getValue(propertyDetails, "price")
+            netPrice = clearString(getValue(propertyDetails, "netPrice"), True)
+            extraPrice = clearString(getValue(propertyDetails, "extraPrice"), True)
+            price = clearString(getValue(propertyDetails, "price"), True)
             with open(objFilePath , mode='a', newline='') as object_file:
                 object_writer = csv.writer(object_file)
                 if os.stat(objFilePath).st_size == 0: #wirte headers if file is empty
@@ -145,6 +146,13 @@ def getValue(jsonObj, key):
         return na
     except:
         return "ERROR"
+    
+def clearString(s, sensitive = False):
+    if sensitive and "," in s:
+        return na
+    s = s.replace("\"", "")
+    s = s.replace(",", "")
+    return s
             
     
         
@@ -166,7 +174,7 @@ def listRequest(jsonObj, objType):
 
 def launchCrawling():
     #range until ~5700 (10.2019)
-    for i in range(2, 5700):
+    for i in range(4020, 4021):
         global objects
         objects = 0
         if failedCrawlsInRow > 100:
