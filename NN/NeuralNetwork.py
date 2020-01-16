@@ -11,12 +11,19 @@ import pickle
 import copy
 
 class NeuralNetwork(object):
+    """
+    This class provides a not yet finished feedforward regression neural network (NN)
+    - hidden_layer_sizes: hidden_layer_neurons in tuple format e.g. (10,5,)
+    - activation: activation function of the NN; 'logistic', 'tanh' or 'idendity'
+    - batch_size: desired mini-batch size
+    - random_state: random-state of weight initalisation
+    
+    - shuffling and epoche wise gradient descent not yet implemented
+    """
     
     def __init__(self, hidden_layer_sizes=(100, ), activation='logistic', alpha=0.0001, 
-                 batch_size='auto', learning_rate='constant', learning_rate_init=0.001, power_t=0.5, 
-                 max_iter=200, shuffle=True, random_state=None, tol=0.0001, verbose=False, 
-                 momentum=0.9, nesterovs_momentum=True, early_stopping=False, validation_fraction=0.1, 
-                 beta_1=0.9, beta_2=0.999, epsilon=1e-08, n_iter_no_change=10, max_fun=15000):
+                 batch_size='auto', learning_rate='constant', learning_rate_init=0.001,
+                 max_iter=200, shuffle=True, random_state = 123):
         """initializes a NeuralNetwork object with the specified parameters"""
         #var initialization and declaration
         self.__hidden_layer_sizes = hidden_layer_sizes
@@ -25,22 +32,8 @@ class NeuralNetwork(object):
         self.__batch_size = batch_size
         self.__learning_rate = learning_rate
         self.__learning_rate_init = learning_rate_init
-        self.__power_t = power_t
-        self.__max_iter = max_iter
         self.__shuffle = shuffle
         self.__random_state = random_state
-        self.__tol = tol
-        self.__verbose = verbose
-        self.__momentum = momentum
-        self.__nesterovs_momentum = nesterovs_momentum
-        self.__early_stopping = early_stopping
-        self.__validation_fraction = validation_fraction
-        self.__beta_1 = beta_1
-        self.__beta_2 = beta_2
-        self.__epsilon = epsilon
-        self.__n_iter_no_change = n_iter_no_change
-        self.__max_fun = max_fun
-        
         self.__step_results = []
         
     def store(self, path):
@@ -62,7 +55,7 @@ class NeuralNetwork(object):
     
     def fit(self, X, y):
         self.__input = X
-        self.__y = y
+        self.__y = y.to_numpy()
         if self.__batch_size == 'auto':
             self.__batch_size = min(200, X.shape[0])
             
@@ -76,81 +69,90 @@ class NeuralNetwork(object):
                 self.__weights.append(r.rand(self.__y.shape[1], self.__hidden_layer_sizes[i-1]+1)*1.4-0.7)
             else: #hidden layer weights
                 self.__weights.append(r.rand(self.__hidden_layer_sizes[i], self.__hidden_layer_sizes[i-1]+1)*1.4-0.7)
-        self.__weights = np.asarray(self.__weights)
         
-        #perform batch-wise forward-prop
+        #perform batch-wise prop
         for i in range(0, X.shape[0], self.__batch_size):
             minibatch = X.iloc[i:i+self.__batch_size]
-            self.__prediction = self.__feedforward(minibatch).T
-            self.__backprop(minibatch)
+            tmp_res, error = NeuralNetwork.forward_prop(minibatch, self.__y, self.__weights)
+            grad, self.__weights = NeuralNetwork.backprob(minibatch, self.__y, self.__weights, tmp_res, update = True)
     
     def predict(self, X):
-        return self.__feedforward(X)[-1]
+        tmp_res, error = NeuralNetwork.forward_prop(X, None, self.__weights)
+        return tmp_res[-1]
     
-    def get_params(self, deep=True):
-        return None
-    
-    def score(self, X, y, sample_weight=None):
-        return None
-    
-    
-    def __feedforward(self, batch):
-        step_result = batch.to_numpy().T
+    @staticmethod
+    def forward_prop(X, y, thetas):
+        step = X.to_numpy().T
         count = 1
-        max_count = len(self.__weights)
-        self.__step_results = [step_result]
-        for layer_weights in self.__weights:
+        max_count = len(thetas)
+        tmp_res = [step]
+        for theta in thetas:
             activation = True
             if count == max_count:
                 activation = False
-            step_result = self.__affine_forward(step_result, layer_weights, activation)
+            step = NeuralNetwork.affine_forward(step, theta, activation)
             count += 1
-            self.__step_results.append(step_result)
-        return step_result
+            tmp_res.append(step)
+            
+        tmp_res[-1] = tmp_res[-1].T
+        error = None
+        if y != None:
+            error = NeuralNetwork.sum_squared_errors(tmp_res[-1], y)
+        return tmp_res, error
     
-    def __affine_forward(self, X, theta, activation = True):
-        X_bias = np.insert(X, X.shape[0], 1, axis = 0) #add bias input to matrix
-        out = np.dot(theta, X_bias)
+    @staticmethod
+    def affine_forward(X, theta, activation):
+        X_b = np.insert(X, X.shape[0], 1, axis = 0) #add bias input to matrix
+        out = np.dot(theta, X_b)
         if activation:
-            out = self.__activation_fun(out)
+            out = NeuralNetwork.log_sig(out)
         return out
     
-    def __backprop(self, batch):
+    @staticmethod
+    def log_sig(x):
+        return 1 / (1 + np.exp(-x))
+    
+    @staticmethod
+    def log_sig_der(x):
+        return NeuralNetwork.log_sig(x) * (1 - NeuralNetwork.log_sig(x))
+    
+    @staticmethod
+    def backprob(X, y, thetas, tmp_res, update):
         #C = cost_function, a = activation_function, z = scalar_product(weights*a^-1+bias)
-        weights = copy.deepcopy(self.__weights)
-        gradient = self.__cost_backward() #dC/da
+        thetas_c = copy.deepcopy(thetas)
+        gradient = NeuralNetwork.cost_backward(tmp_res[-1], y) #dC/da
         w_grad = [] #weight gradient structure
         
-        for weight_layer_index in range(1, len(self.__weights)+1):
-            gradient_weight = self.__weight_gradient(gradient, self.__step_results[-weight_layer_index-1]) #dz/dw
-            print('\ngradient_w:\n', gradient_weight)
-            w_grad = np.concatenate((w_grad, list(reversed(gradient_weight.ravel()))), axis = 0) #concat gradient unrolled
-            self.__weights[-weight_layer_index] -= gradient_weight * self.__learning_rate_init #adjust the weights with the negative gradient
-            gradient = self.__linear_layer_gradient(gradient, weights[-weight_layer_index][:,:-1]) #dz/da^(l-1) [:,:-1] is to remove the bias from the weight layer
-            gradient = self.__activation_fun(gradient, deriv = True) #da/dz
+        for i in range(1, len(thetas)+1):
+            gradient_weight = NeuralNetwork.weight_gradient(gradient, tmp_res[-i-1]) #dz/dw :D
+            w_grad.insert(0, gradient_weight)
+            if update:
+                thetas[-i] -= gradient_weight * 0.001 #no need to change thetas in backprob testing
+            gradient = NeuralNetwork.linear_layer_gradient(gradient, thetas_c[-i][:,:-1]) #dz/da^(l-1) [:,:-1] is to remove the bias from the weight layer
+            gradient = NeuralNetwork.log_sig_der(gradient) #da/dz :D
             
-        #perform gradient eval
-        w_grad = list(reversed(w_grad))
-        print('\ngradient:\n', w_grad)
-        #grad_approx = self.eval_grad()
-            
-    def __linear_layer_gradient(self, gradient, theta):
+        return w_grad, thetas
+    
+    @staticmethod
+    def linear_layer_gradient(gradient, theta):
         """dz/da^(l-1)"""
         return gradient.dot(theta).T
-
-    def __weight_gradient(self, gradient, a_prev):
+    
+    @staticmethod
+    def weight_gradient(gradient, a_prev):
         """dz/dw -> gradient to adjust the weights"""
         a_prev_bias = np.insert(np.mean(a_prev, axis=1), a_prev.shape[0], 1, axis = 0)
         return gradient.reshape(-1,1).dot(np.array([a_prev_bias]))
-        
-    def __cost_backward(self):
+    
+    @staticmethod
+    def cost_backward(prediction, y):
         """dC/da"""
-        out = 2 * (self.__prediction - self.__y.to_numpy())
+        out = 2 * (prediction - y)
         gradient = np.mean(out, axis=0)
         return gradient
         
         
-    def __activation_fun(self, x, deriv = False):
+    def __activation_fun(self, x, deriv = False): #not in use yet
         if self.__activation == 'logistic':
             if deriv:
                 return (1 / (1 + np.exp(-x))) * (1 - (1 / (1 + np.exp(-x))))
@@ -166,77 +168,76 @@ class NeuralNetwork(object):
                 return 1
             else:
                 return x
-        elif self.__activation == 'relu':
-            if deriv:
-                #x[x<=0] = 0
-                #x[x>0] = x -->???
-                return None
-            else:
-                return np.max(0, x)
         else:
             raise Exception('no valid activation function, try: "tanh", "logistic" or "idendity"')
-        
-    def __sum_squared_errors(self):
-        return np.sum((self.__prediction - self.__y.to_numpy())**2)
     
-    def __J(self, thetas):
-        #__forward with thetas as input??????
-        return None
+    @staticmethod
+    def sum_squared_errors(prediction, y):
+        return np.sum((prediction - y)**2)
     
-    def get_weights(self):
-        return self.__weights
-    
-    def __euq_dist(self, x1, x2):
+    @staticmethod
+    def euq_dist(x1, x2):
         x = x1 - x2
         return np.linalg.norm(x)
     
-    def test_case_act_fun(self, X):
-        matrix = X.to_numpy()
-        res1 = self.__activation_fun(matrix, deriv = True)
-        res2 = self.__deriv_approx(self.__activation_fun, matrix)
-        res3 = self.__euq_dist(res1, res2)
-        print('error act_fun:\n', res3)
-    
-    def __deriv_approx(self, f, x):
-        h = 0.00001
-        return (f(x+h) - f(x-h)) / (2*h)
-    
-    def eval_grad(f, x, verbose = False):
+    @staticmethod
+    def eval_grad(f, thetas, X, y, verbose = False):
         """
         - f is a function
         - x is the input of the function f (numpy array)
+        check: (f(x+h) - f(x-h)) / (2*h) where h is 0.0001
         """
-        h = 0.00001
-        grad = np.zeros_like(x)
-        it = np.nditer(x, flags=['multi_index'], op_flags=['readwrite'])
-        while not it.finished:
-            ix = it.multi_index
-            orig_val = x[ix]
-            x[ix] = orig_val + h
-            f_p = f(x) # f(x + h)
-            x[ix] = orig_val - h
-            f_m = f(x) # f(x - h)
-            x[ix] = orig_val #restore original value
-            grad[ix] = (f_p - f_m) / (2*h)
-            if verbose:
-                print(ix, grad[ix])
-            it.iternext()
+        h = 0.0001
+        grad = copy.deepcopy(thetas)
+        for i in range(len(thetas)):
+            for ix in np.ndindex(thetas[i].shape):
+                orig_val = thetas[i][ix]
+                thetas[i][ix] = orig_val + h
+                tmp_res, f_p = f(X, y, thetas) # f(x + h)
+                thetas[i][ix] = orig_val - h
+                tmp_res, f_m = f(X, y, thetas) # f(x - h)
+                thetas[i][ix] = orig_val #restore original value
+                grad[i][ix] = (f_p - f_m) / (2*h)
+                if verbose:
+                    print(ix, grad[i][ix])
         
         return grad
-            
+    
+    @staticmethod
+    def grad_check(X, y, hidden_layer_sizes = (1,)): 
+        #initializes weights according to `hidden_layers` (hidden + input wights +1 'bias')
+        thetas = []
+        r = np.random.RandomState(123)
+        for i in range(len(hidden_layer_sizes)+1): #initialize weights randomly between -0.7 and +0.7
+            if i == 0: #input weight matrix with m = num of target neurons & n = len of input vector
+                thetas.append(r.rand(hidden_layer_sizes[i], X.shape[1]+1)*1.4-0.7)
+            elif i == len(hidden_layer_sizes): #output layer weights
+                thetas.append(r.rand(y.shape[1], hidden_layer_sizes[i-1]+1)*1.4-0.7)
+            else: #hidden layer weights
+                thetas.append(r.rand(hidden_layer_sizes[i], hidden_layer_sizes[i-1]+1)*1.4-0.7)
+        
+        print('\nthetas:\n', thetas)
+        y = y.to_numpy()
+        tmp_res, error = NeuralNetwork.forward_prop(X, y, thetas)
+        print('\ntmp_res:\n', tmp_res)
+        grad, t = NeuralNetwork.backprob(X, y, thetas, tmp_res, update = False) #nothing toDo with t
+        f = NeuralNetwork.forward_prop
+        grad_approx = NeuralNetwork.eval_grad(f, thetas, X, y)
+        print('\ngradient:\n', grad)
+        print('\ngradient_approx:\n', grad_approx)
             
     
 if __name__ == '__main__':
     nn = NeuralNetwork(hidden_layer_sizes = (5, 10,), random_state = 123, activation = 'logistic', batch_size = 4)
-    d = {'col1': [1, 2, 3, 2], 'col2': [4, 5, 6, 1]}
+    #d = {'col1': [1., 2., 3., 2.], 'col2': [4., 5., 6., 1.]}
+    d = {'col1': [2.], 'col2': [4.]}
     X = pd.DataFrame(data=d)
-    d_y = {'col_y': [9, 10, 11, 4]}
+    #d_y = {'col_y': [9., 10., 11., 4.]}
+    d_y = {'col_y': [9.]}
     y = pd.DataFrame(data=d_y)
-    nn.fit(X, y)
-    #nn.test_case_act_fun(X)
-    #predict_obj = {'col1': [1,6], 'col2': [2,5]}
-    #print(nn.predict(pd.DataFrame(data = predict_obj)))
-    
+    NeuralNetwork.grad_check(X, y, (1,))
+    #nn.fit(X, y)
+    #print(nn.predict(X))
     
     
     
