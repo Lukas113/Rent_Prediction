@@ -73,15 +73,16 @@ class NeuralNetwork(object):
         #perform batch-wise prop
         for i in range(0, X.shape[0], self.__batch_size):
             minibatch = X.iloc[i:i+self.__batch_size]
-            tmp_res, error = NeuralNetwork.forward_prop(minibatch, self.__y, self.__weights)
-            grad, self.__weights = NeuralNetwork.backprob(minibatch, self.__y, self.__weights, tmp_res, update = True)
+            batch_y = y.iloc[i:i+self.__batch_size]
+            tmp_res = NeuralNetwork.forward_prop(minibatch, self.__weights)
+            grad, self.__weights = NeuralNetwork.backprob(minibatch, batch_y, self.__weights, tmp_res, update = True)
     
     def predict(self, X):
-        tmp_res, error = NeuralNetwork.forward_prop(X, None, self.__weights)
+        tmp_res = NeuralNetwork.forward_prop(X, self.__weights)
         return tmp_res[-1]
     
     @staticmethod
-    def forward_prop(X, y, thetas):
+    def forward_prop(X, thetas):
         step = X.to_numpy().T
         count = 1
         max_count = len(thetas)
@@ -95,10 +96,13 @@ class NeuralNetwork(object):
             tmp_res.append(step)
             
         tmp_res[-1] = tmp_res[-1].T
-        error = None
-        if y != None:
-            error = NeuralNetwork.sum_squared_errors(tmp_res[-1], y)
-        return tmp_res, error
+        return tmp_res
+    
+    @staticmethod
+    def J(X, y, thetas):
+        tmp_res = NeuralNetwork.forward_prop(X, thetas)
+        error = NeuralNetwork.sum_squared_errors(tmp_res[-1], y)
+        return error
     
     @staticmethod
     def affine_forward(X, theta, activation):
@@ -117,7 +121,7 @@ class NeuralNetwork(object):
         return NeuralNetwork.log_sig(x) * (1 - NeuralNetwork.log_sig(x))
     
     @staticmethod
-    def backprob(X, y, thetas, tmp_res, update):
+    def backprob_previous(X, y, thetas, tmp_res, update):
         #C = cost_function, a = activation_function, z = scalar_product(weights*a^-1+bias)
         thetas_c = copy.deepcopy(thetas)
         gradient = NeuralNetwork.cost_backward(tmp_res[-1], y) #dC/da
@@ -134,14 +138,34 @@ class NeuralNetwork(object):
         return w_grad, thetas
     
     @staticmethod
+    def backprob(X, y, thetas, tmp_res):
+        #C = cost_function, a = activation_function, z = scalar_product(weights*a^-1+bias)
+        gradient = NeuralNetwork.cost_backward(tmp_res[-1], y) #dC/da
+        w_grad = [] #weight gradient structure
+        
+        for i in range(1, len(thetas)+1):
+            gradient_weight = NeuralNetwork.weight_gradient(gradient, tmp_res[-i-1]) #dz/dw :D
+            w_grad.insert(0, gradient_weight)
+            gradient = NeuralNetwork.linear_layer_gradient(gradient, thetas[-i][:,:-1]) #dz/da^(l-1) [:,:-1] is to remove the bias from the weight layer
+            gradient = NeuralNetwork.log_sig_der(gradient) #da/dz :D
+            
+        return w_grad, thetas
+    
+    @staticmethod
     def linear_layer_gradient(gradient, theta):
         """dz/da^(l-1)"""
-        return gradient.dot(theta).T
+        #return gradient.dot(theta).T #this line should be wrong!!!!!!!!!!
+        theta = theta.T #for easy access to all weights related to the neuron in the layer (L-1)
+        gradient = gradient.reshape(-1,1) #reshape to perform hadamard product
+        gradient = np.sum(gradient * theta, axis = 1) #sum of hadamard product to get dC/da_k^(L-1)
+        return gradient
     
     @staticmethod
     def weight_gradient(gradient, a_prev):
         """dz/dw -> gradient to adjust the weights"""
         a_prev_bias = np.insert(np.mean(a_prev, axis=1), a_prev.shape[0], 1, axis = 0)
+        #print('\ngrad_before_dot:\n', gradient)
+        #print('\na_prev_bias:\n', np.array([a_prev_bias]))
         return gradient.reshape(-1,1).dot(np.array([a_prev_bias]))
     
     @staticmethod
@@ -193,9 +217,9 @@ class NeuralNetwork(object):
             for ix in np.ndindex(thetas[i].shape):
                 orig_val = thetas[i][ix]
                 thetas[i][ix] = orig_val + h
-                tmp_res, f_p = f(X, y, thetas) # f(x + h)
+                f_p = f(X, y, thetas) # f(x + h)
                 thetas[i][ix] = orig_val - h
-                tmp_res, f_m = f(X, y, thetas) # f(x - h)
+                f_m = f(X, y, thetas) # f(x - h)
                 thetas[i][ix] = orig_val #restore original value
                 grad[i][ix] = (f_p - f_m) / (2*h)
                 if verbose:
@@ -218,10 +242,10 @@ class NeuralNetwork(object):
         
         print('\nthetas:\n', thetas)
         y = y.to_numpy()
-        tmp_res, error = NeuralNetwork.forward_prop(X, y, thetas)
+        tmp_res = NeuralNetwork.forward_prop(X, thetas)
         print('\ntmp_res:\n', tmp_res)
-        grad, t = NeuralNetwork.backprob(X, y, thetas, tmp_res, update = False) #nothing toDo with t
-        f = NeuralNetwork.forward_prop
+        grad, t = NeuralNetwork.backprob(X, y, thetas, tmp_res) #nothing toDo with t
+        f = NeuralNetwork.J
         grad_approx = NeuralNetwork.eval_grad(f, thetas, X, y)
         print('\ngradient:\n', grad)
         print('\ngradient_approx:\n', grad_approx)
@@ -235,7 +259,7 @@ if __name__ == '__main__':
     #d_y = {'col_y': [9., 10., 11., 4.]}
     d_y = {'col_y': [9.]}
     y = pd.DataFrame(data=d_y)
-    NeuralNetwork.grad_check(X, y, (1,))
+    NeuralNetwork.grad_check(X, y, (2,))
     #nn.fit(X, y)
     #print(nn.predict(X))
     

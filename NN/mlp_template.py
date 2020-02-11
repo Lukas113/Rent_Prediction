@@ -145,8 +145,27 @@ class MLP(object):
     def back_propagation(theta, a, y):
         '''Computes the error d for all units. '''
         ### FILL IN CODE HERE 
-        a = a.T #to get easy access to the activations
-        d = 2*(a[-1] - y) #for CLASSIFICATION?
+        a = (a.T).copy() #transpond activations for access simplicity
+        d, n_out, n_second_last = [], theta[-1].shape[0], theta[-2].shape[0]
+        print('\ntheta:\n', theta)
+        tmp = 2*(a[-n_out:].T - y) #len(theta[-1]) provides the numbers of output neurons
+        a = a[:-n_out] #update unused activations
+        if n_out > 1: #in case of classification
+            tmp *= MLP.phi_der(a[-n_out:].T)
+            a = a[:-n_out]
+        print('\ntmp:\n', tmp)
+        print('\nactiv:\n', a[-n_second_last:])
+        grad = np.dot(a[-n_second_last:], tmp) #dz/dw
+        print('\ngrad:\n', grad)
+        a = a[:-n_second_last]
+        d.append(grad)
+        print('\nactivations:\n', a)
+        for i in range(2, len(theta)+1):
+            print('\ncurrent_theta:\n', (theta[-i][:,:-1]))
+            print('\ntmp:\n', tmp)
+            n = theta[-i].shape[0] #number of neurons in current layer
+            tmp = np.dot(theta[-i][:,:-1], tmp) #[:,:-1] to not consider biases
+            tmp *= MLP.phi_der()
         return d[::-1] # reverse order if required, ie [::-1]
 
     def grad_check(self, X, y, epsilon=0.0001, decimal=3, verbose=False):
@@ -186,8 +205,9 @@ class MLP(object):
         Makes use of MLP.forward_propagation
         '''
         ### FILL IN CODE HERE 
-
-        return yhat
+        a = np.asarray([MLP.forward_propagation(self.__theta, x) for x in X])
+        y_hat = a[-1]
+        return y_hat
 
     @staticmethod
     def rollup_if(x_, shapes):
@@ -195,27 +215,41 @@ class MLP(object):
         '''
         ### FILL IN CODE HERE 
         # conditional returns
+        if shapes != None:
+            return MLP.rollup(x_, shapes)
 
     @staticmethod
     def unroll(xlist):
         '''Unrolling theta in a 1d array (that can be passed into minimize).
         '''
         ### FILL IN CODE HERE 
-
+        x_unrolled = np.concatenate([x.ravel() for x in xlist], axis = None)
         return x_unrolled
 
     @staticmethod
     def rollup(x_unrolled, shapes):
-        '''Rolling up theta into a list of 2d matrices.
         '''
-        ### FILL IN CODE HERE 
-
+        Rolling up theta into a list of 2d matrices.
+        - shapes: (m1, n1, m2, n2, ...)
+        '''
+        ### FILL IN CODE HERE
+        xlist = []
+        for i in range(int(len(shapes)/2)):
+            m, n = shapes[2*i], shapes[2*i+1]
+            sub_theta = x_unrolled[:(m*n)]
+            x_unrolled = x_unrolled[(m*n):]
+            xlist.append(sub_theta.reshape(m, n))
         return xlist
 
     @staticmethod
     def phi(t):
         '''Logistic / sigmoid function.'''
         return 1. / (1 + np.exp(-t))
+    
+    @staticmethod
+    def phi_der(t):
+        '''Logistic / sigmoid function derivative'''
+        return MLP.phi(t) * (1 - MLP.phi(t))
 
     def _init_network(self, X, y):
         '''
@@ -225,7 +259,7 @@ class MLP(object):
         - sets self.__theta_shapes (needed for unrolling and uprolling)
         '''
         ### FILL IN CODE HERE
-        y_, y_shape = None, 1 #y_shape of 1 assumes regression
+        y_shape = 1 #y_shape of 1 assumes regression
         
         #transforms y if classification
         if y.dtype.type == np.str_:
@@ -233,6 +267,8 @@ class MLP(object):
             lb.fit(y)
             y_ = lb.transform(y)
             y_shape = len(lb.classes_)
+        else:
+            y_ = y.reshape(-1,1)
         
         self.__layers = (X.shape[1],) + self.__layers + (y_shape,)
         self.__theta = MLP.init_theta(self.__layers, self.__weight_init_int)
@@ -243,8 +279,9 @@ class MLP(object):
     def init_theta(layers, weight_init_int):
         '''Initializes the thetas and returns them as a list of 2-d matrices.
         '''
-        ### FILL IN CODE HERE 
-        theta = [np.random.randn(y, x+1) for x, y in zip(layers[:-1], layers[1:])] #x+1 is for bias purpose
+        ### FILL IN CODE HERE
+        w_fac, w_sum = abs(weight_init_int[0]) + abs(weight_init_int[1]), weight_init_int[0]
+        theta = [np.random.rand(y, x+1)*w_fac+w_sum for x, y in zip(layers[:-1], layers[1:])] #x+1 is for bias purpose
         return theta
     
     def store(self, path):
@@ -270,9 +307,35 @@ class MLP(object):
     
     
 if __name__ == '__main__':
+    '''
+    - X: [[object_1], [object_2], ...]
+    - y: [y1, y2, y3, ...]
+    '''
     nn = MLP((3,))
-    #d = {'col1': [1., 2., 3., 2.], 'col2': [4., 5., 6., 1.]}
-    X = np.array([[2.,3.], [3.,4.]])
-    #d_y = {'col_y': [9., 10., 11., 4.]}
-    y = np.array([9.,7.])
-    nn.fit(X, y)
+    #REGRESSION
+    X = np.array([[2.,3.], [3.,4.], [1.,5.]])
+    y = np.array([9.,7.,8.])
+    
+    #MULTI CLASSIFICATION
+    #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
+    #y = np.array(['9.','7.','2.','9.'])
+    
+    #BINARY CLASSIFICATION
+    #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
+    #y = np.array(['9.','2.','2.','9.'])
+    
+    theta = nn.fit(X, y)
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
