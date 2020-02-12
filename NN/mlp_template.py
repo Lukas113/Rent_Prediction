@@ -95,7 +95,9 @@ class MLP(object):
         J : cost function value given thetas
         '''
         ### FILL IN CODE HERE 
-        
+        a = np.asarray([MLP.forward_propagation(theta_, x) for x in X])
+        y_hat = a[-1]
+        cost = np.sum((y_hat - y)**2)
         return cost
 
     @staticmethod
@@ -126,7 +128,7 @@ class MLP(object):
         a single data point x.
         '''
         ### FILL IN CODE HERE 
-        a, i_out, classify = [], len(theta)-1, False
+        a, i_out, classify = x, len(theta)-1, False
         if len(theta[i_out]) > 1:
             classify = True
             
@@ -146,26 +148,30 @@ class MLP(object):
         '''Computes the error d for all units. '''
         ### FILL IN CODE HERE 
         a = (a.T).copy() #transpond activations for access simplicity
-        d, n_out, n_second_last = [], theta[-1].shape[0], theta[-2].shape[0]
-        print('\ntheta:\n', theta)
+        d, n_train, n_out, n_second_last = [], a.shape[1], theta[-1].shape[0], theta[-2].shape[0]
         tmp = 2*(a[-n_out:].T - y) #len(theta[-1]) provides the numbers of output neurons
         a = a[:-n_out] #update unused activations
         if n_out > 1: #in case of classification
             tmp *= MLP.phi_der(a[-n_out:].T)
             a = a[:-n_out]
-        print('\ntmp:\n', tmp)
-        print('\nactiv:\n', a[-n_second_last:])
-        grad = np.dot(a[-n_second_last:], tmp) #dz/dw
-        print('\ngrad:\n', grad)
+        a_L = a[-n_second_last:]
         a = a[:-n_second_last]
+        a_L = np.insert(a_L, a_L.shape[0], 1, axis = 0) #add bias activations
+        grad = np.dot(tmp.T, a_L.T) * (1/n_train) #dz/dw
         d.append(grad)
-        print('\nactivations:\n', a)
-        for i in range(2, len(theta)+1):
-            print('\ncurrent_theta:\n', (theta[-i][:,:-1]))
-            print('\ntmp:\n', tmp)
-            n = theta[-i].shape[0] #number of neurons in current layer
-            tmp = np.dot(theta[-i][:,:-1], tmp) #[:,:-1] to not consider biases
-            tmp *= MLP.phi_der()
+        
+        for i in range(1, len(theta)):
+            n = theta[-i].shape[1] - 1 #number of neurons in L (-1 is to not consider bias vector)
+            tmp = np.dot((theta[-i][:,:-1]).T, tmp.T) #dz/da^(L-1), [:,:-1] to not consider biases
+            tmp *= MLP.phi_der(a[-n:]) #da/dz
+            a = a[:-n]
+            n_prev = theta[-(i+1)].shape[1] - 1
+            a_L = a[-n_prev:]
+            a = a[:-n_prev]
+            a_L = np.insert(a_L, a_L.shape[0], 1, axis = 0)
+            grad = np.dot(tmp, a_L.T) * (1/n_train) #dz/dw
+            d.append(grad)
+            
         return d[::-1] # reverse order if required, ie [::-1]
 
     def grad_check(self, X, y, epsilon=0.0001, decimal=3, verbose=False):
@@ -313,8 +319,8 @@ if __name__ == '__main__':
     '''
     nn = MLP((3,))
     #REGRESSION
-    X = np.array([[2.,3.], [3.,4.], [1.,5.]])
-    y = np.array([9.,7.,8.])
+    X = np.array([[2.,3.], [3.,4.]])
+    y = np.array([9.,7.])
     
     #MULTI CLASSIFICATION
     #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
