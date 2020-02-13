@@ -29,7 +29,7 @@ class MLP(object):
             The maximal number of gradient descent iterations.
 
         alpha: float
-            The l2 regularization strength.
+            The l2 regularization strength. (ridge regression)
         '''
         # the model
         self.__layers = layers
@@ -95,9 +95,10 @@ class MLP(object):
         J : cost function value given thetas
         '''
         ### FILL IN CODE HERE 
+        theta_ = MLP.rollup_if(theta_, theta_shapes)
         a = np.asarray([MLP.forward_propagation(theta_, x) for x in X])
-        y_hat = a[-1]
-        cost = np.sum((y_hat - y)**2)
+        y_hat = a[:,-1]
+        cost = np.sum((y_hat - y.T)**2) + alpha * np.sum(MLP.unroll(theta_)**2)
         return cost
 
     @staticmethod
@@ -117,9 +118,12 @@ class MLP(object):
         -------
         grad : the gradient, unrolled
         '''
-        ### FILL IN CODE HERE 
+        ### FILL IN CODE HERE
+        theta_ = MLP.rollup_if(theta_, theta_shapes) 
         a = np.asarray([MLP.forward_propagation(theta_, x) for x in X]) #elementwise forwardprop
         DELTA = MLP.back_propagation(theta_, a, y)
+        DELTA_unrolled = MLP.unroll(DELTA) + alpha * 2 * MLP.unroll(theta_) #ridge regression (alpha * 2*theta_i)
+        DELTA = MLP.rollup(DELTA_unrolled, MLP._get_theta_shapes(theta_))
         return DELTA 
 
     @staticmethod
@@ -174,34 +178,36 @@ class MLP(object):
             
         return d[::-1] # reverse order if required, ie [::-1]
 
-    def grad_check(self, X, y, epsilon=0.0001, decimal=3, verbose=False):
+    def grad_check(self, X, y, epsilon=0.0001, decimal=3, verbose=False, alpha = 0.):
         '''Compare the gradient with finite differences around current point
         in parameter space.
         '''
         theta_ur = MLP.unroll(self.__theta)
+        y = MLP._trans_y(y)
         # approximate the gradient by finite differences
         approxgrad = []
         for idx in range(len(theta_ur)):
             # modify theta[idx] +/- epsilon
             tplus = theta_ur.copy()
             tplus[idx] = tplus[idx]+epsilon
-            pluseps = MLP.cost_function(tplus, 0., X, y, self.__theta_shapes)
+            pluseps = MLP.cost_function(tplus, alpha, X, y, self.__theta_shapes)
             tminus = theta_ur.copy()
             tminus[idx] = tminus[idx]-epsilon
             # calculate the costfunctions
-            minuseps = MLP.cost_function(tminus, 0., X, y, self.__theta_shapes)
-            pluseps = MLP.cost_function(tplus, 0., X, y, self.__theta_shapes)
+            minuseps = MLP.cost_function(tminus, alpha, X, y, self.__theta_shapes)
+            pluseps = MLP.cost_function(tplus, alpha, X, y, self.__theta_shapes)
             # finite diffs
             approxgrad.append((pluseps - minuseps)/(2*epsilon))
 
         approxgrad = np.array(approxgrad)
         approxgrad /= np.linalg.norm(approxgrad)
-        calcgrad = MLP.gradient_cost_function(theta_ur, 0., X, y, self.__theta_shapes)
+        calcgrad = MLP.gradient_cost_function(theta_ur, alpha, X, y, self.__theta_shapes)
+        calcgrad = MLP.unroll(calcgrad)
         calcgrad /= np.linalg.norm(calcgrad)
 
         if verbose:
-            print('approx : ', approxgrad)
-            print('calc : ', calcgrad)
+            print('\napprox :\n', approxgrad)
+            print('\ncalc :\n', calcgrad)
 
         np.testing.assert_array_almost_equal(approxgrad, calcgrad, decimal=decimal)
 
@@ -223,6 +229,7 @@ class MLP(object):
         # conditional returns
         if shapes != None:
             return MLP.rollup(x_, shapes)
+        return x_
 
     @staticmethod
     def unroll(xlist):
@@ -265,20 +272,26 @@ class MLP(object):
         - sets self.__theta_shapes (needed for unrolling and uprolling)
         '''
         ### FILL IN CODE HERE
-        y_shape = 1 #y_shape of 1 assumes regression
-        
-        #transforms y if classification
+        y_ = MLP._trans_y(y)
+        self.__layers = (X.shape[1],) + self.__layers + (y_.shape[1],)
+        self.__theta = MLP.init_theta(self.__layers, self.__weight_init_int)
+        self.__theta_shapes = MLP._get_theta_shapes(self.__theta)
+        return y_
+    
+    @staticmethod
+    def _get_theta_shapes(theta):
+        return tuple(np.asarray(list(t.shape for t in theta)).ravel())
+    
+    @staticmethod
+    def _trans_y(y):
+        '''Transforms y
+        '''
         if y.dtype.type == np.str_:
             lb = LabelBinarizer()
             lb.fit(y)
             y_ = lb.transform(y)
-            y_shape = len(lb.classes_)
         else:
             y_ = y.reshape(-1,1)
-        
-        self.__layers = (X.shape[1],) + self.__layers + (y_shape,)
-        self.__theta = MLP.init_theta(self.__layers, self.__weight_init_int)
-        self.__theta_shapes = [t.shape for t in self.__theta]
         return y_
 
     @staticmethod
@@ -317,10 +330,10 @@ if __name__ == '__main__':
     - X: [[object_1], [object_2], ...]
     - y: [y1, y2, y3, ...]
     '''
-    nn = MLP((3,))
+    nn = MLP((3,), alpha = 0.0001) #alpha?
     #REGRESSION
     X = np.array([[2.,3.], [3.,4.]])
-    y = np.array([9.,7.])
+    y = np.array([9.,5.])
     
     #MULTI CLASSIFICATION
     #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
@@ -330,7 +343,8 @@ if __name__ == '__main__':
     #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
     #y = np.array(['9.','2.','2.','9.'])
     
-    theta = nn.fit(X, y)
+    nn.fit(X, y)
+    #nn.grad_check(X, y, verbose = True) #:D
     
     
     
