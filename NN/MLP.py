@@ -1,7 +1,10 @@
 import numpy as np
 import sys
 import pickle
-
+import random
+import plotly.graph_objs as go
+from IPython.display import display
+from scipy.special import expit
 from sklearn.preprocessing import LabelBinarizer
 
 class MLP(object):
@@ -9,7 +12,7 @@ class MLP(object):
     '''
 
     def __init__(self, layers, weight_init_int=(-.7, .7), max_iter=1000,
-            learning_rate=0.3, epsilon=0.01, alpha=0.):
+            learning_rate=0.01, epsilon=0.01, alpha=0., batch_size = 'auto', plot_error = False):
         '''
         layers: tuple
             The elements of the tuple define the number of units in all hidden
@@ -39,6 +42,8 @@ class MLP(object):
         self.__epsilon = epsilon
         self.__max_iter = max_iter
         self.__learning_rate = learning_rate
+        self.__batch_size = batch_size
+        self.__plot_error = plot_error
 
         print('MLP(layers={}, alpha={}, learning_rate={})'.format(
             self.__layers, self.__alpha, self.__learning_rate,))
@@ -48,25 +53,47 @@ class MLP(object):
         Configures input and output layer, initializes weights and fits the
         model coefficients.
         '''
+        if self.__plot_error:
+            f = go.FigureWidget()
+            f.add_scatter(y = [])
+            f.update_layout(title = 'Network Error', xaxis_title = 'epochs', yaxis_title = 'SSE')
+            display(f)
         # initialize the entire network, including input and ouput layer
         y_ = self._init_network(X, y)
 
-        costs_ = []
+        costs_ = [sys.float_info.max]
         normgrad = None
+        
+        # initialize batch_size if not set in __init__
+        if self.__batch_size == 'auto':
+            self.__batch_size = min(200, X.shape[0])
+        elif self.__batch_size == 'none': #no mini-batch gradient descent
+            X_batch, y_batch = X, y_
 
         # do gradient descent iterations
+        numit = 0
         for numit in range(self.__max_iter):
+            #create mini_batch
+            if self.__batch_size != 'none':
+                idx = random.sample(range(X.shape[0]), self.__batch_size)
+                X_batch, y_batch = X[idx], y_[idx]
             if numit % 10 == 0:
                 sys.stdout.flush()
-                sys.stdout.write("\r" + 'num its = {} \t\t normgrad = {}'.format(numit, normgrad))
-            # get gradient
-            grad = MLP.gradient_cost_function(self.__theta, self.__alpha, X, y_)
+                sys.stdout.write("\r" + 'num its = {} \t\t normgrad = {} \t\t cost = {}'.format(numit, normgrad, costs_[-1]))
+                if self.__plot_error:
+                    scatter = f.data[0]
+                    if numit <= 20:
+                        scatter.y = costs_[1:]
+                    else:
+                        scatter.y = costs_[21:]
+            # get batch gradient
+            grad = MLP.gradient_cost_function(self.__theta, self.__alpha, X_batch, y_batch)
             # update weights / thetas
             for tidx, theta in enumerate(self.__theta):
                 theta -= self.__learning_rate*grad[tidx]
             costs_.append(MLP.cost_function(self.__theta, self.__alpha, X, y_))
             normgrad = np.linalg.norm(MLP.unroll(grad))
-            if normgrad < self.__epsilon:
+            if normgrad < self.__epsilon and costs_[-1] > costs_[-2]: #stops optimize early if gradient is short and the cost increased
                 break
 
         self.__numits_ = numit
@@ -76,6 +103,7 @@ class MLP(object):
         print('number of iterations: ', self.__numits_)
         print('max iterations: ', self.__max_iter)
         print('norm(grad): ', normgrad)
+        print('cost: ', costs_[-1])
 
     @staticmethod
     def cost_function(theta_, alpha, X, y, theta_shapes=None):
@@ -258,7 +286,8 @@ class MLP(object):
     @staticmethod
     def phi(t):
         '''Logistic / sigmoid function.'''
-        return 1. / (1 + np.exp(-t))
+        return expit(t)
+        #return 1. / (1 + np.exp(-t)) #causes overflow problems for big negative numbers
     
     @staticmethod
     def phi_der(t):
@@ -331,10 +360,13 @@ if __name__ == '__main__':
     - X: [[object_1], [object_2], ...]
     - y: [y1, y2, y3, ...]
     '''
-    nn = MLP((2,3,)) #alpha?
+    nn = MLP((10,), learning_rate = 0.1, batch_size = 'none', max_iter = 10000)
     #REGRESSION
-    X = np.array([[2.,3.], [3.,4.]])
-    y = np.array([9.,5.])
+    #X = np.array([[2.,3.], [3.,4.]])
+    #y = np.array([9.,5.])
+    
+    X = np.random.rand(1000, 20)
+    y = np.random.rand(1, 1000) * 50
     
     #MULTI CLASSIFICATION
     #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
@@ -344,8 +376,9 @@ if __name__ == '__main__':
     #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
     #y = np.array(['9.','2.','2.','9.'])
     
-    nn.fit(X, y)
-    nn.grad_check(X, y, verbose = True)
+    #nn.fit(X, y)
+    #nn.grad_check(X, y, verbose = True)
+    
     
     
     
