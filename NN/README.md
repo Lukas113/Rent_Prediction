@@ -8,14 +8,14 @@ Fachcoach: Michael Graber
 The class NeuralNetwork provides a feedforward Neural Network for regression in scikit format which is easy memory and loadable.
 
 - example
-nn = NeuralNetwork(hidden_layer_sizes = (50, 20,), activation = 'logistic', batch_size = 100)
-nn.fit(X, y)
-predictions = nn.predict(X)
+layers, learning_rate, alpha, batch_size, max_iter, plot_error = (80,), 0.01, 0.001, 'none', 1000, True
+mlp = MLP(layers, learning_rate = learning_rate, alpha = alpha, batch_size = batch_size, max_iter = max_iter, plot_error = plot_error)
+mlp.fit(X_train, y_train)
+predicted = mlp.predict(X_test)
+    
+m = mape(y_test, predicted)
+residuals = y_test - predicted
 
 - store
-nn.store(path)
-nn = NeuralNetwork.load(path)
+mlp.store('path.pkl')
 
-The NN does not work yet, because the calculated gradient of the NN and the approximated gradient do not match.
-
-Testing can be done at the very bottom of NeuralNetwork.py in the Main function. This includes, for example, the gradient check.

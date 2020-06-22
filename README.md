@@ -25,5 +25,4 @@ Details are available in README.md in the folder 'data_analysis'.
 
 The Supervised Learning part is divided into two parts, 1. a linear regression and 2. a creation of a neural network.
 The Linear Regression can be found in the folder 'linear_regression' in the file 'linear_regression.ipynb'.
-The Neural Networks part is in the folder 'NN' in the file 'NeuralNetwork.py'. Unfortunately I could not finish this part completely, because I could not debug the gradient check successfully. For this reason training and performance comparison between both models is missing.
-More about this can be found in the respective README.md in the corresponding folder.
+The Neural Networks part is in the folder 'NN' in the file 'NeuralNetwork.py'.

@@ -2,10 +2,10 @@ import numpy as np
 import sys
 import pickle
 import random
+import copy
 import plotly.graph_objs as go
 from IPython.display import display
 from scipy.special import expit
-from sklearn.preprocessing import LabelBinarizer
 
 class MLP(object):
     ''' A Multi-Layer Perceptron.
@@ -93,7 +93,7 @@ class MLP(object):
                 theta -= self.__learning_rate*grad[tidx]
             costs_.append(MLP.cost_function(self.__theta, self.__alpha, X, y_))
             normgrad = np.linalg.norm(MLP.unroll(grad))
-            if normgrad < self.__epsilon and costs_[-1] > costs_[-2]: #stops optimize early if gradient is short and the cost increased
+            if normgrad < self.__epsilon:
                 break
 
         self.__numits_ = numit
@@ -150,7 +150,11 @@ class MLP(object):
         theta_ = MLP.rollup_if(theta_, theta_shapes) 
         a = np.asarray([MLP.forward_propagation(theta_, x) for x in X]) #elementwise forwardprop
         DELTA = MLP.back_propagation(theta_, a, y)
-        DELTA_unrolled = MLP.unroll(DELTA) + alpha * 2 * MLP.unroll(theta_) #ridge regression (alpha * 2*theta_i)
+        #bias weights are set 0 for l2 to ignore them in DELTA
+        l2_theta = copy.deepcopy(theta_)
+        for i in range(len(l2_theta)):
+            l2_theta[i][:,-1] = 0
+        DELTA_unrolled = MLP.unroll(DELTA) + alpha * 2 * MLP.unroll(l2_theta) #ridge regression (alpha * 2*theta_i)
         DELTA = MLP.rollup(DELTA_unrolled, MLP._get_theta_shapes(theta_))
         return DELTA 
 
@@ -160,15 +164,12 @@ class MLP(object):
         a single data point x.
         '''
         ### FILL IN CODE HERE 
-        a, i_out, classify = x, len(theta)-1, False
-        if len(theta[i_out]) > 1:
-            classify = True
-            
+        a, i_out = x, len(theta)-1
         for i in range(len(theta)):
             x = np.insert(x, x.shape[0], 1)
             x = theta[i].dot(x)
             a = np.concatenate((a, x), axis = None)
-            if (i == i_out) and not classify:
+            if (i == i_out):
                 continue
             else:
                 x = MLP.phi(x)
@@ -247,7 +248,7 @@ class MLP(object):
         '''
         ### FILL IN CODE HERE 
         a = np.asarray([MLP.forward_propagation(self.__theta, x) for x in X])
-        y_hat = a[-1]
+        y_hat = a[:,-1]
         return y_hat
 
     @staticmethod
@@ -316,13 +317,7 @@ class MLP(object):
     def _trans_y(y):
         '''Transforms y
         '''
-        if y.dtype.type == np.str_:
-            lb = LabelBinarizer()
-            lb.fit(y)
-            y_ = lb.transform(y)
-        else:
-            y_ = y.reshape(-1,1)
-        return y_
+        return y.reshape(-1,1)
 
     @staticmethod
     def init_theta(layers, weight_init_int):
@@ -353,30 +348,19 @@ class MLP(object):
             path = path + '.pkl'
         with open(path, 'rb') as f:
             return pickle.load(f)
-    
-    
+
+
 if __name__ == '__main__':
     '''
     - X: [[object_1], [object_2], ...]
     - y: [y1, y2, y3, ...]
     '''
-    nn = MLP((10,), learning_rate = 0.1, batch_size = 'none', max_iter = 10000)
+    nn = MLP((10,), learning_rate = 0.1, batch_size = 'none', max_iter = 1000, alpha = 0.)
     #REGRESSION
-    #X = np.array([[2.,3.], [3.,4.]])
-    #y = np.array([9.,5.])
+    X = np.array([[2.,3.], [3.,4.]])
+    y = np.array([500.,423.])
     
-    X = np.random.rand(1000, 20)
-    y = np.random.rand(1, 1000) * 50
-    
-    #MULTI CLASSIFICATION
-    #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
-    #y = np.array(['9.','7.','2.','9.'])
-    
-    #BINARY CLASSIFICATION
-    #X = np.array([[2.,3.], [3.,4.], [1.,2.], [4.,2.]])
-    #y = np.array(['9.','2.','2.','9.'])
-    
-    #nn.fit(X, y)
+    nn.fit(X, y)
     #nn.grad_check(X, y, verbose = True)
     
     
