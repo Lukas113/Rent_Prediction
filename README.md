@@ -1,15 +1,4 @@
-# ImmoRent: Rental price estimate for real estate in Switzerland
-
-Studierender: Lukas Gehrig  
-Fachcoach: Michael Graber  
-
-# Overview
-
-## Portfolio-Credit Distribution
-
-- Web Datenbeschaffung: 1
-- Explorative Datenanalyse: 1
-- Supervised Learning: 2
+# Rental price estimate for real estate in Switzerland
 
 ## Web Data Retrieval
 

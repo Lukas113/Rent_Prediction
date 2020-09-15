@@ -1,7 +1,4 @@
-# ImmoRent: Rental price estimate for real estate in Switzerland
-
-Studierender: Lukas Gehrig  
-Fachcoach: Michael Graber  
+# Rental price estimate for real estate in Switzerland
 
 # Crawling
 
